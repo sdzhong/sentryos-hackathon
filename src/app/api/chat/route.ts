@@ -1,4 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import * as Sentry from '@sentry/nextjs'
 
 const SYSTEM_PROMPT = `You are a helpful personal assistant designed to help with general research, questions, and tasks.
 
@@ -26,6 +27,8 @@ export async function POST(request: Request) {
     const { messages } = await request.json() as { messages: MessageInput[] }
 
     if (!messages || !Array.isArray(messages)) {
+      Sentry.logger.warn('Chat request received with invalid messages payload')
+      Sentry.metrics.increment('chat.requests', 1, { tags: { status: 'invalid' } })
       return new Response(
         JSON.stringify({ error: 'Messages array is required' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
@@ -35,11 +38,17 @@ export async function POST(request: Request) {
     // Get the last user message
     const lastUserMessage = messages.filter(m => m.role === 'user').pop()
     if (!lastUserMessage) {
+      Sentry.logger.warn('Chat request received with no user message')
+      Sentry.metrics.increment('chat.requests', 1, { tags: { status: 'invalid' } })
       return new Response(
         JSON.stringify({ error: 'No user message found' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       )
     }
+
+    Sentry.logger.info('Chat request received with %d messages', [messages.length])
+    Sentry.metrics.increment('chat.requests', 1, { tags: { status: 'started' } })
+    Sentry.metrics.distribution('chat.messages_per_request', messages.length)
 
     // Build conversation context
     const conversationContext = messages
@@ -89,6 +98,8 @@ export async function POST(request: Request) {
               if (Array.isArray(content)) {
                 for (const block of content) {
                   if (block.type === 'tool_use') {
+                    Sentry.logger.info('Agent tool invoked: %s', [block.name])
+                    Sentry.metrics.increment('chat.tool_invocations', 1, { tags: { tool: block.name } })
                     controller.enqueue(encoder.encode(
                       `data: ${JSON.stringify({ type: 'tool_start', tool: block.name })}\n\n`
                     ))
@@ -106,6 +117,8 @@ export async function POST(request: Request) {
 
             // Signal completion
             if (message.type === 'result' && message.subtype === 'success') {
+              Sentry.logger.info('Chat stream completed successfully')
+              Sentry.metrics.increment('chat.requests', 1, { tags: { status: 'success' } })
               controller.enqueue(encoder.encode(
                 `data: ${JSON.stringify({ type: 'done' })}\n\n`
               ))
@@ -113,6 +126,8 @@ export async function POST(request: Request) {
 
             // Handle errors
             if (message.type === 'result' && message.subtype !== 'success') {
+              Sentry.logger.error('Chat query did not complete successfully, subtype: %s', [message.subtype])
+              Sentry.metrics.increment('chat.requests', 1, { tags: { status: 'query_failure' } })
               controller.enqueue(encoder.encode(
                 `data: ${JSON.stringify({ type: 'error', message: 'Query did not complete successfully' })}\n\n`
               ))
@@ -122,7 +137,9 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode('data: [DONE]\n\n'))
           controller.close()
         } catch (error) {
-          console.error('Stream error:', error)
+          Sentry.logger.error('Chat stream error: %s', [error instanceof Error ? error.message : String(error)])
+          Sentry.metrics.increment('chat.errors', 1, { tags: { phase: 'stream' } })
+          Sentry.captureException(error)
           controller.enqueue(encoder.encode(
             `data: ${JSON.stringify({ type: 'error', message: 'Stream error occurred' })}\n\n`
           ))
@@ -139,7 +156,9 @@ export async function POST(request: Request) {
       },
     })
   } catch (error) {
-    console.error('Chat API error:', error)
+    Sentry.logger.error('Chat API error: %s', [error instanceof Error ? error.message : String(error)])
+    Sentry.metrics.increment('chat.errors', 1, { tags: { phase: 'request' } })
+    Sentry.captureException(error)
 
     return new Response(
       JSON.stringify({ error: 'Failed to process chat request. Check server logs for details.' }),
