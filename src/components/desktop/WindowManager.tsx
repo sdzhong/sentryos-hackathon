@@ -77,15 +77,14 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           attributes: { windowId: window.id }
         })
 
-        setWindows(windows => {
-          const openCount = windows.length + 1
-          Sentry.metrics.gauge('window.open_count', openCount)
-        })
-
-        return [
+        const newWindows = [
           ...prev.map(w => ({ ...w, isFocused: false })),
           { ...window, zIndex: newZ, isFocused: true }
         ]
+
+        Sentry.metrics.gauge('window.open_count', newWindows.length)
+
+        return newWindows
       })
       return newZ
     })
@@ -94,6 +93,8 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
   const closeWindow = useCallback((id: string) => {
     setWindows(prev => {
       const window = prev.find(w => w.id === id)
+      const newWindows = prev.filter(w => w.id !== id)
+
       if (window) {
         Sentry.logger.info('Window closed', {
           windowId: id,
@@ -104,11 +105,10 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           attributes: { windowId: id }
         })
 
-        const newWindows = prev.filter(w => w.id !== id)
         Sentry.metrics.gauge('window.open_count', newWindows.length)
       }
 
-      return prev.filter(w => w.id !== id)
+      return newWindows
     })
   }, [])
 
