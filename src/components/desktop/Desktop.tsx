@@ -7,6 +7,7 @@ import { DesktopIcon } from './DesktopIcon'
 import { Notepad } from './apps/Notepad'
 import { FolderView, FolderItem } from './apps/FolderView'
 import { Chat } from './apps/Chat'
+import { CustomerResearch } from './apps/CustomerResearch'
 import { useState, useEffect } from 'react'
 import * as Sentry from '@sentry/nextjs'
 
@@ -121,6 +122,31 @@ function DesktopContent() {
     })
   }
 
+  const openCustomerResearch = () => {
+    Sentry.logger.info('Agent opened', {
+      agent: 'customer-research'
+    })
+
+    Sentry.metrics.count('agent.opened', 1, {
+      attributes: { agent: 'customer-research' }
+    })
+
+    openWindow({
+      id: 'customer-research',
+      title: 'Customer Research Agent',
+      icon: '🔍',
+      x: 180,
+      y: 60,
+      width: 650,
+      height: 550,
+      minWidth: 450,
+      minHeight: 400,
+      isMinimized: false,
+      isMaximized: false,
+      content: <CustomerResearch />
+    })
+  }
+
   const openAgentsFolder = () => {
     Sentry.logger.info('Desktop icon opened', {
       icon: 'agents-folder',
@@ -131,7 +157,15 @@ function DesktopContent() {
       attributes: { icon: 'agents-folder' }
     })
 
-    const agentsFolderItems: FolderItem[] = []
+    const agentsFolderItems: FolderItem[] = [
+      {
+        id: 'customer-research',
+        name: 'Customer Research',
+        type: 'app',
+        icon: 'chat',
+        onOpen: openCustomerResearch
+      }
+    ]
 
     openWindow({
       id: 'agents-folder',
