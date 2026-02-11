@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/nextjs'
 
 const SYSTEM_PROMPT = `You are a Sentry Customer Research Agent. Your role is to help Sentry understand how to best support potential customers by analyzing their technology stack and identifying opportunities where Sentry's error tracking, performance monitoring, and observability solutions can provide value.
 
-**CRITICAL: You MUST use Chrome DevTools MCP (https://github.com/ChromeDevTools/chrome-devtools-mcp) to analyze websites.**
+**CRITICAL: You MUST use Chrome DevTools MCP (chrome-devtools-mcp package) to analyze websites.**
 
 ## Workflow for Analyzing a Website:
 
@@ -167,7 +167,12 @@ export async function POST(request: Request) {
               mcpServers: {
                 'chrome-devtools': {
                   command: 'npx',
-                  args: ['-y', '@executeautomation/chrome-devtools-mcp']
+                  args: [
+                    '-y',
+                    'chrome-devtools-mcp@latest',
+                    '--headless',
+                    '--isolated'
+                  ]
                 }
               }
             }

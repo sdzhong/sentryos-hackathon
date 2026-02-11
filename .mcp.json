@@ -5,7 +5,12 @@
     },
     "chrome-devtools": {
       "command": "npx",
-      "args": ["-y", "@executeautomation/chrome-devtools-mcp"]
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--headless",
+        "--isolated"
+      ]
     }
   }
 }
