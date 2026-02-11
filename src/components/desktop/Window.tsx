@@ -66,7 +66,7 @@ export function Window({ window: win }: WindowProps) {
 
           Sentry.metrics.distribution('window.drag_duration', dragDuration, {
             unit: 'millisecond',
-            tags: { windowId: win.id }
+            attributes: { windowId: win.id }
           })
 
           updateWindowPosition(win.id, d.x, d.y)
@@ -86,7 +86,7 @@ export function Window({ window: win }: WindowProps) {
 
           Sentry.metrics.distribution('window.resize_duration', resizeDuration, {
             unit: 'millisecond',
-            tags: { windowId: win.id }
+            attributes: { windowId: win.id }
           })
 
           updateWindowSize(win.id, ref.offsetWidth, ref.offsetHeight)

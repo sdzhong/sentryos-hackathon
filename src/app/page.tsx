@@ -26,14 +26,14 @@ export default function Home() {
       timestamp: new Date().toISOString()
     })
 
-    Sentry.metrics.increment('page.load', 1, {
-      tags: { page: 'home' }
+    Sentry.metrics.count('page.load', 1, {
+      attributes: { page: 'home' }
     })
 
     const loadTime = performance.now() - loadStartTime
     Sentry.metrics.distribution('page.load_time', loadTime, {
       unit: 'millisecond',
-      tags: { page: 'home' }
+      attributes: { page: 'home' }
     })
   }, [])
 

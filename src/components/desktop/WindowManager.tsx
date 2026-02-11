@@ -43,8 +43,8 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
               windowTitle: window.title
             })
 
-            Sentry.metrics.increment('window.restored', 1, {
-              tags: { windowId: window.id }
+            Sentry.metrics.count('window.restored', 1, {
+              attributes: { windowId: window.id }
             })
 
             return prev.map(w =>
@@ -73,8 +73,8 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           position: `${window.x},${window.y}`
         })
 
-        Sentry.metrics.increment('window.opened', 1, {
-          tags: { windowId: window.id }
+        Sentry.metrics.count('window.opened', 1, {
+          attributes: { windowId: window.id }
         })
 
         setWindows(windows => {
@@ -100,8 +100,8 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           windowTitle: window.title
         })
 
-        Sentry.metrics.increment('window.closed', 1, {
-          tags: { windowId: id }
+        Sentry.metrics.count('window.closed', 1, {
+          attributes: { windowId: id }
         })
 
         const newWindows = prev.filter(w => w.id !== id)
@@ -121,8 +121,8 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           windowTitle: window.title
         })
 
-        Sentry.metrics.increment('window.minimized', 1, {
-          tags: { windowId: id }
+        Sentry.metrics.count('window.minimized', 1, {
+          attributes: { windowId: id }
         })
       }
 
@@ -143,8 +143,8 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           windowTitle: window.title
         })
 
-        Sentry.metrics.increment(isMaximizing ? 'window.maximized' : 'window.unmaximized', 1, {
-          tags: { windowId: id }
+        Sentry.metrics.count(isMaximizing ? 'window.maximized' : 'window.unmaximized', 1, {
+          attributes: { windowId: id }
         })
       }
 
@@ -188,8 +188,8 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           newPosition: `${x},${y}`
         })
 
-        Sentry.metrics.increment('window.moved', 1, {
-          tags: { windowId: id }
+        Sentry.metrics.count('window.moved', 1, {
+          attributes: { windowId: id }
         })
       }
 
@@ -209,18 +209,18 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           newSize: `${width}x${height}`
         })
 
-        Sentry.metrics.increment('window.resized', 1, {
-          tags: { windowId: id }
+        Sentry.metrics.count('window.resized', 1, {
+          attributes: { windowId: id }
         })
 
         Sentry.metrics.distribution('window.width', width, {
           unit: 'pixel',
-          tags: { windowId: id }
+          attributes: { windowId: id }
         })
 
         Sentry.metrics.distribution('window.height', height, {
           unit: 'pixel',
-          tags: { windowId: id }
+          attributes: { windowId: id }
         })
       }
 

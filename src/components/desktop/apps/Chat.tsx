@@ -63,7 +63,7 @@ export function Chat() {
   useEffect(() => {
     Sentry.logger.info('Chat component mounted')
 
-    Sentry.metrics.increment('chat.opened', 1)
+    Sentry.metrics.count('chat.opened', 1)
 
     return () => {
       Sentry.logger.info('Chat component unmounted', {
@@ -102,13 +102,13 @@ export function Chat() {
       conversationLength: messages.length + 1
     })
 
-    Sentry.metrics.increment('chat.message.sent', 1, {
-      tags: { role: 'user' }
+    Sentry.metrics.count('chat.message.sent', 1, {
+      attributes: { role: 'user' }
     })
 
     Sentry.metrics.distribution('chat.message.length', userMessage.content.length, {
       unit: 'character',
-      tags: { role: 'user' }
+      attributes: { role: 'user' }
     })
 
     setMessages(prev => [...prev, userMessage])
@@ -136,8 +136,8 @@ export function Chat() {
           statusText: response.statusText
         })
 
-        Sentry.metrics.increment('chat.error', 1, {
-          tags: { type: 'api_error', status: response.status.toString() }
+        Sentry.metrics.count('chat.error', 1, {
+          attributes: { type: 'api_error', status: response.status.toString() }
         })
 
         throw new Error('Failed to get response')
@@ -195,8 +195,8 @@ export function Chat() {
                   tool: parsed.tool
                 })
 
-                Sentry.metrics.increment('chat.tool.started', 1, {
-                  tags: { tool: parsed.tool }
+                Sentry.metrics.count('chat.tool.started', 1, {
+                  attributes: { tool: parsed.tool }
                 })
 
                 setCurrentTool({
@@ -219,16 +219,16 @@ export function Chat() {
 
                 Sentry.metrics.distribution('chat.response_time', responseTime, {
                   unit: 'millisecond',
-                  tags: { status: 'success' }
+                  attributes: { status: 'success' }
                 })
 
                 Sentry.metrics.distribution('chat.response.length', streamingContent.length, {
                   unit: 'character',
-                  tags: { role: 'assistant' }
+                  attributes: { role: 'assistant' }
                 })
 
-                Sentry.metrics.increment('chat.message.received', 1, {
-                  tags: { role: 'assistant' }
+                Sentry.metrics.count('chat.message.received', 1, {
+                  attributes: { role: 'assistant' }
                 })
 
                 setCurrentTool(null)
@@ -238,8 +238,8 @@ export function Chat() {
                   error: parsed.message
                 })
 
-                Sentry.metrics.increment('chat.error', 1, {
-                  tags: { type: 'stream_error' }
+                Sentry.metrics.count('chat.error', 1, {
+                  attributes: { type: 'stream_error' }
                 })
 
                 streamingContent = 'Sorry, I encountered an error processing your request.'
@@ -271,13 +271,13 @@ export function Chat() {
         responseTime
       })
 
-      Sentry.metrics.increment('chat.error', 1, {
-        tags: { type: 'request_error' }
+      Sentry.metrics.count('chat.error', 1, {
+        attributes: { type: 'request_error' }
       })
 
       Sentry.metrics.distribution('chat.response_time', responseTime, {
         unit: 'millisecond',
-        tags: { status: 'error' }
+        attributes: { status: 'error' }
       })
 
       Sentry.captureException(error)

@@ -32,8 +32,8 @@ export async function POST(request: Request) {
       timestamp: new Date().toISOString()
     })
 
-    Sentry.metrics.increment('api.chat.request', 1, {
-      tags: { endpoint: '/api/chat' }
+    Sentry.metrics.count('api.chat.request', 1, {
+      attributes: { endpoint: '/api/chat' }
     })
 
     const { messages } = await request.json() as { messages: MessageInput[] }
@@ -43,8 +43,8 @@ export async function POST(request: Request) {
         requestId
       })
 
-      Sentry.metrics.increment('api.chat.error', 1, {
-        tags: { type: 'validation_error', reason: 'missing_messages' }
+      Sentry.metrics.count('api.chat.error', 1, {
+        attributes: { type: 'validation_error', reason: 'missing_messages' }
       })
 
       return new Response(
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
     Sentry.metrics.distribution('api.chat.message_count', messages.length, {
       unit: 'none',
-      tags: { endpoint: '/api/chat' }
+      attributes: { endpoint: '/api/chat' }
     })
 
     // Get the last user message
@@ -66,8 +66,8 @@ export async function POST(request: Request) {
         messageCount: messages.length
       })
 
-      Sentry.metrics.increment('api.chat.error', 1, {
-        tags: { type: 'validation_error', reason: 'no_user_message' }
+      Sentry.metrics.count('api.chat.error', 1, {
+        attributes: { type: 'validation_error', reason: 'no_user_message' }
       })
 
       return new Response(
@@ -147,8 +147,8 @@ export async function POST(request: Request) {
                       toolId: block.id
                     })
 
-                    Sentry.metrics.increment('api.chat.tool_use', 1, {
-                      tags: { tool: block.name }
+                    Sentry.metrics.count('api.chat.tool_use', 1, {
+                      attributes: { tool: block.name }
                     })
 
                     controller.enqueue(encoder.encode(
@@ -181,20 +181,20 @@ export async function POST(request: Request) {
 
               Sentry.metrics.distribution('api.chat.response_time', responseTime, {
                 unit: 'millisecond',
-                tags: { status: 'success' }
+                attributes: { status: 'success' }
               })
 
               Sentry.metrics.distribution('api.chat.stream_time', streamTime, {
                 unit: 'millisecond',
-                tags: { status: 'success' }
+                attributes: { status: 'success' }
               })
 
               Sentry.metrics.distribution('api.chat.tools_per_request', toolsUsed, {
                 unit: 'none',
-                tags: { status: 'success' }
+                attributes: { status: 'success' }
               })
 
-              Sentry.metrics.increment('api.chat.success', 1)
+              Sentry.metrics.count('api.chat.success', 1)
 
               controller.enqueue(encoder.encode(
                 `data: ${JSON.stringify({ type: 'done' })}\n\n`
@@ -208,8 +208,8 @@ export async function POST(request: Request) {
                 subtype: message.subtype
               })
 
-              Sentry.metrics.increment('api.chat.error', 1, {
-                tags: { type: 'query_error', subtype: message.subtype }
+              Sentry.metrics.count('api.chat.error', 1, {
+                attributes: { type: 'query_error', subtype: message.subtype }
               })
 
               controller.enqueue(encoder.encode(
@@ -227,8 +227,8 @@ export async function POST(request: Request) {
             stack: error instanceof Error ? error.stack : undefined
           })
 
-          Sentry.metrics.increment('api.chat.error', 1, {
-            tags: { type: 'stream_error' }
+          Sentry.metrics.count('api.chat.error', 1, {
+            attributes: { type: 'stream_error' }
           })
 
           Sentry.captureException(error)
@@ -258,13 +258,13 @@ export async function POST(request: Request) {
       responseTime
     })
 
-    Sentry.metrics.increment('api.chat.error', 1, {
-      tags: { type: 'request_error' }
+    Sentry.metrics.count('api.chat.error', 1, {
+      attributes: { type: 'request_error' }
     })
 
     Sentry.metrics.distribution('api.chat.response_time', responseTime, {
       unit: 'millisecond',
-      tags: { status: 'error' }
+      attributes: { status: 'error' }
     })
 
     Sentry.captureException(error)

@@ -64,7 +64,7 @@ function DesktopContent() {
       timestamp: new Date().toISOString()
     })
 
-    Sentry.metrics.increment('desktop.initialized', 1)
+    Sentry.metrics.count('desktop.initialized', 1)
 
     return () => {
       Sentry.logger.info('Desktop environment unmounted')
@@ -77,8 +77,8 @@ function DesktopContent() {
       type: 'notepad'
     })
 
-    Sentry.metrics.increment('desktop.icon.opened', 1, {
-      tags: { icon: 'install-guide' }
+    Sentry.metrics.count('desktop.icon.opened', 1, {
+      attributes: { icon: 'install-guide' }
     })
     openWindow({
       id: 'install-guide',
@@ -102,8 +102,8 @@ function DesktopContent() {
       type: 'chat'
     })
 
-    Sentry.metrics.increment('desktop.icon.opened', 1, {
-      tags: { icon: 'chat' }
+    Sentry.metrics.count('desktop.icon.opened', 1, {
+      attributes: { icon: 'chat' }
     })
     openWindow({
       id: 'chat',
@@ -127,8 +127,8 @@ function DesktopContent() {
       type: 'folder'
     })
 
-    Sentry.metrics.increment('desktop.icon.opened', 1, {
-      tags: { icon: 'agents-folder' }
+    Sentry.metrics.count('desktop.icon.opened', 1, {
+      attributes: { icon: 'agents-folder' }
     })
 
     const agentsFolderItems: FolderItem[] = []
