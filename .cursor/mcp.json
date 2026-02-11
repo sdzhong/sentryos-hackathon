@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "Sentry": {
+      "url": "https://mcp.sentry.dev/mcp/testorg-sdz/hack-as-one"
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "@executeautomation/chrome-devtools-mcp"]
+    }
+  }
+}
