@@ -55,15 +55,21 @@ export function CustomerResearch() {
 I help analyze potential customer websites to identify how Sentry can best support their technology stack.
 
 **What I can do:**
-- Analyze website tech stacks using Chrome DevTools
-- Identify third-party tools and frameworks
-- Recommend relevant Sentry SDKs and features
-- Suggest integration strategies
+- 🌐 Use **Chrome DevTools MCP** to inspect live websites
+- 🔍 Analyze DOM structure and JavaScript execution
+- 📊 Identify frameworks (React, Vue, Next.js, Angular, etc.)
+- 🛠️ Detect third-party services and tools
+- 💡 Recommend relevant Sentry SDKs and features
+- 🎯 Suggest tailored integration strategies
+
+**How it works:**
+I use Chrome DevTools Protocol to navigate to the website, execute JavaScript to inspect the environment, and analyze the DOM to identify technologies and patterns.
 
 **To get started:**
-Simply provide a company website URL, and I'll research their technology stack to create a tailored Sentry recommendation.
+Simply provide a company website URL, and I'll use Chrome DevTools to research their technology stack and create a tailored Sentry recommendation.
 
-Example: "Analyze https://example.com"`,
+**Example:**
+"Analyze https://example.com"`,
       timestamp: new Date()
     }
   ])
