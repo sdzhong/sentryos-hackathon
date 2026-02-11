@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Rnd } from 'react-rnd'
 import { X, Minus, Square, Copy } from 'lucide-react'
+import * as Sentry from '@sentry/nextjs'
 import { WindowState } from './types'
 import { useWindowManager } from './WindowManager'
 
@@ -21,6 +22,8 @@ export function Window({ window: win }: WindowProps) {
   } = useWindowManager()
 
   const [mounted, setMounted] = useState(false)
+  const dragStartTime = useRef<number>(0)
+  const resizeStartTime = useRef<number>(0)
 
   useEffect(() => {
     setMounted(true)
@@ -48,14 +51,44 @@ export function Window({ window: win }: WindowProps) {
       enableResizing={!win.isMaximized}
       dragHandleClassName="window-drag-handle"
       style={{ zIndex: win.zIndex }}
-      onDragStart={() => focusWindow(win.id)}
+      onDragStart={() => {
+        focusWindow(win.id)
+        dragStartTime.current = Date.now()
+
+        Sentry.logger.info('Window drag started', {
+          windowId: win.id,
+          windowTitle: win.title
+        })
+      }}
       onDragStop={(_e, d) => {
         if (!win.isMaximized) {
+          const dragDuration = Date.now() - dragStartTime.current
+
+          Sentry.metrics.distribution('window.drag_duration', dragDuration, {
+            unit: 'millisecond',
+            tags: { windowId: win.id }
+          })
+
           updateWindowPosition(win.id, d.x, d.y)
         }
       }}
+      onResizeStart={() => {
+        resizeStartTime.current = Date.now()
+
+        Sentry.logger.info('Window resize started', {
+          windowId: win.id,
+          windowTitle: win.title
+        })
+      }}
       onResizeStop={(_e, _dir, ref, _delta, pos) => {
         if (!win.isMaximized) {
+          const resizeDuration = Date.now() - resizeStartTime.current
+
+          Sentry.metrics.distribution('window.resize_duration', resizeDuration, {
+            unit: 'millisecond',
+            tags: { windowId: win.id }
+          })
+
           updateWindowSize(win.id, ref.offsetWidth, ref.offsetHeight)
           updateWindowPosition(win.id, pos.x, pos.y)
         }

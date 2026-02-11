@@ -7,7 +7,8 @@ import { DesktopIcon } from './DesktopIcon'
 import { Notepad } from './apps/Notepad'
 import { FolderView, FolderItem } from './apps/FolderView'
 import { Chat } from './apps/Chat'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import * as Sentry from '@sentry/nextjs'
 
 const INSTALL_GUIDE_CONTENT = `# SentryOS Install Guide
 
@@ -58,7 +59,27 @@ function DesktopContent() {
   const { windows, openWindow } = useWindowManager()
   const [selectedIcon, setSelectedIcon] = useState<string | null>(null)
 
+  useEffect(() => {
+    Sentry.logger.info('Desktop environment initialized', {
+      timestamp: new Date().toISOString()
+    })
+
+    Sentry.metrics.increment('desktop.initialized', 1)
+
+    return () => {
+      Sentry.logger.info('Desktop environment unmounted')
+    }
+  }, [])
+
   const openInstallGuide = () => {
+    Sentry.logger.info('Desktop icon opened', {
+      icon: 'install-guide',
+      type: 'notepad'
+    })
+
+    Sentry.metrics.increment('desktop.icon.opened', 1, {
+      tags: { icon: 'install-guide' }
+    })
     openWindow({
       id: 'install-guide',
       title: 'Install Guide.md',
@@ -76,6 +97,14 @@ function DesktopContent() {
   }
 
   const openChatWindow = () => {
+    Sentry.logger.info('Desktop icon opened', {
+      icon: 'chat',
+      type: 'chat'
+    })
+
+    Sentry.metrics.increment('desktop.icon.opened', 1, {
+      tags: { icon: 'chat' }
+    })
     openWindow({
       id: 'chat',
       title: 'SentryOS Chat',
@@ -93,6 +122,15 @@ function DesktopContent() {
   }
 
   const openAgentsFolder = () => {
+    Sentry.logger.info('Desktop icon opened', {
+      icon: 'agents-folder',
+      type: 'folder'
+    })
+
+    Sentry.metrics.increment('desktop.icon.opened', 1, {
+      tags: { icon: 'agents-folder' }
+    })
+
     const agentsFolderItems: FolderItem[] = []
 
     openWindow({
@@ -113,6 +151,7 @@ function DesktopContent() {
 
   const handleDesktopClick = () => {
     setSelectedIcon(null)
+    Sentry.logger.info('Desktop clicked (deselect icons)')
   }
 
   return (
