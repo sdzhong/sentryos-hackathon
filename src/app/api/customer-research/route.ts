@@ -164,6 +164,12 @@ export async function POST(request: Request) {
               allowDangerouslySkipPermissions: true,
               includePartialMessages: true,
               cwd: process.cwd(),
+              mcpServers: {
+                'chrome-devtools': {
+                  command: 'npx',
+                  args: ['-y', '@executeautomation/chrome-devtools-mcp']
+                }
+              }
             }
           })) {
             // Handle streaming text deltas
