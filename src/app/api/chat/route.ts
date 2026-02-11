@@ -93,30 +93,29 @@ export async function POST(request: Request) {
       ? `${SYSTEM_PROMPT}\n\nPrevious conversation:\n${conversationContext}\n\nUser: ${lastUserMessage.content}`
       : `${SYSTEM_PROMPT}\n\nUser: ${lastUserMessage.content}`
 
-    // Start AI agent monitoring span
-    return await Sentry.startSpan(
-      {
-        op: 'gen_ai.invoke_agent',
-        name: 'invoke_agent Chat Assistant',
-        attributes: {
-          'gen_ai.agent.name': 'Chat Assistant',
-          'gen_ai.request.model': 'claude-sonnet-4-5-20250929',
-          'gen_ai.operation.name': 'chat_completion',
-          'gen_ai.request.messages': JSON.stringify(messages),
-          'gen_ai.conversation.id': requestId,
-          'gen_ai.request.max_turns': 10,
-        },
+    // Create AI agent monitoring span (will be completed during stream processing)
+    const agentSpan = Sentry.startInactiveSpan({
+      op: 'gen_ai.invoke_agent',
+      name: 'invoke_agent Chat Assistant',
+      attributes: {
+        'gen_ai.agent.name': 'Chat Assistant',
+        'gen_ai.request.model': 'claude-sonnet-4-5-20250929',
+        'gen_ai.operation.name': 'chat_completion',
+        'gen_ai.request.messages': JSON.stringify(messages),
+        'gen_ai.conversation.id': requestId,
+        'gen_ai.request.max_turns': 10,
       },
-      async (agentSpan) => {
-        const encoder = new TextEncoder()
-        let toolsUsed = 0
-        let textChunks = 0
-        let totalInputTokens = 0
-        let totalOutputTokens = 0
-        const streamStartTime = Date.now()
-        const toolExecutions: Array<{ name: string; duration: number }> = []
+    })
 
-        const stream = new ReadableStream({
+    const encoder = new TextEncoder()
+    let toolsUsed = 0
+    let textChunks = 0
+    let totalInputTokens = 0
+    let totalOutputTokens = 0
+    const streamStartTime = Date.now()
+    const toolExecutions: Array<{ name: string; duration: number }> = []
+
+    const stream = new ReadableStream({
           async start(controller) {
             try {
               Sentry.logger.info('Starting Claude agent query', {
@@ -156,37 +155,37 @@ export async function POST(request: Request) {
                         const toolStartTime = Date.now()
 
                         // Create execute_tool span
-                        await Sentry.startSpan(
-                          {
-                            op: 'gen_ai.execute_tool',
-                            name: `execute_tool ${block.name}`,
-                            attributes: {
-                              'gen_ai.tool.name': block.name,
-                              'gen_ai.tool.input': JSON.stringify(block.input || {}),
-                              'gen_ai.tool.type': 'function',
-                            },
+                        const toolSpan = Sentry.startInactiveSpan({
+                          op: 'gen_ai.execute_tool',
+                          name: `execute_tool ${block.name}`,
+                          attributes: {
+                            'gen_ai.tool.name': block.name,
+                            'gen_ai.tool.input': JSON.stringify(block.input || {}),
+                            'gen_ai.tool.type': 'function',
                           },
-                          async (toolSpan) => {
-                            Sentry.logger.info('Tool execution started', {
-                              requestId,
-                              tool: block.name,
-                              toolId: block.id
-                            })
+                        })
 
-                            Sentry.metrics.count('api.chat.tool_use', 1, {
-                              attributes: { tool: block.name }
-                            })
+                        Sentry.logger.info('Tool execution started', {
+                          requestId,
+                          tool: block.name,
+                          toolId: block.id
+                        })
 
-                            controller.enqueue(encoder.encode(
-                              `data: ${JSON.stringify({ type: 'tool_start', tool: block.name })}\n\n`
-                            ))
+                        Sentry.metrics.count('api.chat.tool_use', 1, {
+                          attributes: { tool: block.name }
+                        })
 
-                            const toolDuration = Date.now() - toolStartTime
-                            toolExecutions.push({ name: block.name, duration: toolDuration })
+                        controller.enqueue(encoder.encode(
+                          `data: ${JSON.stringify({ type: 'tool_start', tool: block.name })}\n\n`
+                        ))
 
-                            toolSpan.setAttribute('gen_ai.tool.duration_ms', toolDuration)
-                          }
-                        )
+                        const toolDuration = Date.now() - toolStartTime
+                        toolExecutions.push({ name: block.name, duration: toolDuration })
+
+                        if (toolSpan) {
+                          toolSpan.setAttribute('gen_ai.tool.duration_ms', toolDuration)
+                          toolSpan.end()
+                        }
                       }
                     }
                   }
@@ -211,14 +210,17 @@ export async function POST(request: Request) {
                   const responseTime = Date.now() - requestStartTime
                   const streamTime = Date.now() - streamStartTime
 
-                  // Set final agent span attributes
-                  agentSpan.setAttribute('gen_ai.usage.input_tokens', totalInputTokens)
-                  agentSpan.setAttribute('gen_ai.usage.output_tokens', totalOutputTokens)
-                  agentSpan.setAttribute('gen_ai.response.tools_used_count', toolsUsed)
-                  agentSpan.setAttribute('gen_ai.response.text_chunks', textChunks)
-                  agentSpan.setAttribute('gen_ai.agent.duration_ms', responseTime)
-                  agentSpan.setAttribute('gen_ai.agent.stream_duration_ms', streamTime)
-                  agentSpan.setAttribute('gen_ai.tool_executions', JSON.stringify(toolExecutions))
+                  // Set final agent span attributes and close span
+                  if (agentSpan) {
+                    agentSpan.setAttribute('gen_ai.usage.input_tokens', totalInputTokens)
+                    agentSpan.setAttribute('gen_ai.usage.output_tokens', totalOutputTokens)
+                    agentSpan.setAttribute('gen_ai.response.tools_used_count', toolsUsed)
+                    agentSpan.setAttribute('gen_ai.response.text_chunks', textChunks)
+                    agentSpan.setAttribute('gen_ai.agent.duration_ms', responseTime)
+                    agentSpan.setAttribute('gen_ai.agent.stream_duration_ms', streamTime)
+                    agentSpan.setAttribute('gen_ai.tool_executions', JSON.stringify(toolExecutions))
+                    agentSpan.end()
+                  }
 
                   Sentry.logger.info('Chat request completed successfully', {
                     requestId,
@@ -273,7 +275,10 @@ export async function POST(request: Request) {
                     attributes: { type: 'query_error', subtype: message.subtype }
                   })
 
-                  agentSpan.setStatus({ code: 2, message: 'Query failed' })
+                  if (agentSpan) {
+                    agentSpan.setStatus({ code: 2, message: 'Query failed' })
+                    agentSpan.end()
+                  }
 
                   controller.enqueue(encoder.encode(
                     `data: ${JSON.stringify({ type: 'error', message: 'Query did not complete successfully' })}\n\n`
@@ -294,7 +299,10 @@ export async function POST(request: Request) {
                 attributes: { type: 'stream_error' }
               })
 
-              agentSpan.setStatus({ code: 2, message: 'Stream error' })
+              if (agentSpan) {
+                agentSpan.setStatus({ code: 2, message: 'Stream error' })
+                agentSpan.end()
+              }
               Sentry.captureException(error)
 
               controller.enqueue(encoder.encode(
@@ -313,7 +321,6 @@ export async function POST(request: Request) {
           },
         })
       }
-    )
   } catch (error) {
     const responseTime = Date.now() - requestStartTime
 
