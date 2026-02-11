@@ -30,6 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# lock files for other package managers (using npm)
+pnpm-lock.yaml
+
 # env files (can opt-in for committing if needed)
 .env*
 

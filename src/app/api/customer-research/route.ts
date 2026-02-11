@@ -79,6 +79,9 @@ export async function POST(request: Request) {
   const requestStartTime = Date.now()
   const requestId = crypto.randomUUID()
 
+  // Set conversation ID for multi-turn tracking
+  Sentry.setConversationId(requestId)
+
   try {
     Sentry.logger.info('Customer Research API request received', {
       requestId,
@@ -141,159 +144,236 @@ export async function POST(request: Request) {
       ? `${SYSTEM_PROMPT}\n\nPrevious conversation:\n${conversationContext}\n\nUser: ${lastUserMessage.content}`
       : `${SYSTEM_PROMPT}\n\nUser: ${lastUserMessage.content}`
 
-    // Create streaming response
+    // Create AI agent monitoring span (will be completed during stream processing)
+    const agentSpan = Sentry.startInactiveSpan({
+      op: 'gen_ai.invoke_agent',
+      name: 'invoke_agent Customer Research Agent',
+      attributes: {
+        'gen_ai.agent.name': 'Customer Research Agent',
+        'gen_ai.request.model': 'claude-sonnet-4-5-20250929',
+        'gen_ai.operation.name': 'customer_research',
+        'gen_ai.request.messages': JSON.stringify(messages),
+        'gen_ai.conversation.id': requestId,
+        'gen_ai.request.max_turns': 15,
+      },
+    })
+
     const encoder = new TextEncoder()
     let toolsUsed = 0
     let textChunks = 0
+    let totalInputTokens = 0
+    let totalOutputTokens = 0
     const streamStartTime = Date.now()
+    const toolExecutions: Array<{ name: string; duration: number }> = []
 
     const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          Sentry.logger.info('Starting Claude agent query for customer research', {
-            requestId,
-            maxTurns: 15
-          })
+          async start(controller) {
+            try {
+              Sentry.logger.info('Starting Claude agent query for customer research', {
+                requestId,
+                maxTurns: 15
+              })
 
-          for await (const message of query({
-            prompt: fullPrompt,
-            options: {
-              maxTurns: 15,
-              tools: { type: 'preset', preset: 'claude_code' },
-              permissionMode: 'bypassPermissions',
-              allowDangerouslySkipPermissions: true,
-              includePartialMessages: true,
-              cwd: process.cwd(),
-              mcpServers: {
-                'chrome-devtools': {
-                  command: 'npx',
-                  args: [
-                    '-y',
-                    'chrome-devtools-mcp@latest',
-                    '--headless',
-                    '--isolated'
-                  ]
+              for await (const message of query({
+                prompt: fullPrompt,
+                options: {
+                  maxTurns: 15,
+                  tools: { type: 'preset', preset: 'claude_code' },
+                  permissionMode: 'bypassPermissions',
+                  allowDangerouslySkipPermissions: true,
+                  includePartialMessages: true,
+                  cwd: process.cwd(),
+                  mcpServers: {
+                    'chrome-devtools': {
+                      command: 'npx',
+                      args: [
+                        '-y',
+                        'chrome-devtools-mcp@latest',
+                        '--headless',
+                        '--isolated'
+                      ]
+                    }
+                  }
                 }
-              }
-            }
-          })) {
-            // Handle streaming text deltas
-            if (message.type === 'stream_event' && 'event' in message) {
-              const event = message.event
-              if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-                textChunks++
-                controller.enqueue(encoder.encode(
-                  `data: ${JSON.stringify({ type: 'text_delta', text: event.delta.text })}\n\n`
-                ))
-              }
-            }
-
-            // Send tool start events
-            if (message.type === 'assistant' && 'message' in message) {
-              const content = message.message?.content
-              if (Array.isArray(content)) {
-                for (const block of content) {
-                  if (block.type === 'tool_use') {
-                    toolsUsed++
-                    Sentry.logger.info('Tool execution started in customer research', {
-                      requestId,
-                      tool: block.name,
-                      toolId: block.id
-                    })
-
-                    Sentry.metrics.count('api.customer_research.tool_use', 1, {
-                      attributes: { tool: block.name }
-                    })
-
+              })) {
+                // Handle streaming text deltas
+                if (message.type === 'stream_event' && 'event' in message) {
+                  const event = message.event
+                  if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+                    textChunks++
                     controller.enqueue(encoder.encode(
-                      `data: ${JSON.stringify({ type: 'tool_start', tool: block.name })}\n\n`
+                      `data: ${JSON.stringify({ type: 'text_delta', text: event.delta.text })}\n\n`
                     ))
                   }
                 }
+
+                // Track tool executions
+                if (message.type === 'assistant' && 'message' in message) {
+                  const content = message.message?.content
+                  if (Array.isArray(content)) {
+                    for (const block of content) {
+                      if (block.type === 'tool_use') {
+                        toolsUsed++
+                        const toolStartTime = Date.now()
+
+                        // Create execute_tool span
+                        const toolSpan = Sentry.startInactiveSpan({
+                          op: 'gen_ai.execute_tool',
+                          name: `execute_tool ${block.name}`,
+                          attributes: {
+                            'gen_ai.tool.name': block.name,
+                            'gen_ai.tool.input': JSON.stringify(block.input || {}),
+                            'gen_ai.tool.type': 'function',
+                          },
+                        })
+
+                        Sentry.logger.info('Tool execution started in customer research', {
+                          requestId,
+                          tool: block.name,
+                          toolId: block.id
+                        })
+
+                        Sentry.metrics.count('api.customer_research.tool_use', 1, {
+                          attributes: { tool: block.name }
+                        })
+
+                        controller.enqueue(encoder.encode(
+                          `data: ${JSON.stringify({ type: 'tool_start', tool: block.name })}\n\n`
+                        ))
+
+                        const toolDuration = Date.now() - toolStartTime
+                        toolExecutions.push({ name: block.name, duration: toolDuration })
+
+                        if (toolSpan) {
+                          toolSpan.setAttribute('gen_ai.tool.duration_ms', toolDuration)
+                          toolSpan.end()
+                        }
+                      }
+                    }
+                  }
+
+                  // Track token usage from message
+                  if (message.message?.usage) {
+                    const usage = message.message.usage
+                    if (usage.input_tokens) totalInputTokens += usage.input_tokens
+                    if (usage.output_tokens) totalOutputTokens += usage.output_tokens
+                  }
+                }
+
+                // Send tool progress updates
+                if (message.type === 'tool_progress') {
+                  controller.enqueue(encoder.encode(
+                    `data: ${JSON.stringify({ type: 'tool_progress', tool: message.tool_name, elapsed: message.elapsed_time_seconds })}\n\n`
+                  ))
+                }
+
+                // Signal completion
+                if (message.type === 'result' && message.subtype === 'success') {
+                  const responseTime = Date.now() - requestStartTime
+                  const streamTime = Date.now() - streamStartTime
+
+                  // Set final agent span attributes and close span
+                  if (agentSpan) {
+                    agentSpan.setAttribute('gen_ai.usage.input_tokens', totalInputTokens)
+                    agentSpan.setAttribute('gen_ai.usage.output_tokens', totalOutputTokens)
+                    agentSpan.setAttribute('gen_ai.response.tools_used_count', toolsUsed)
+                    agentSpan.setAttribute('gen_ai.response.text_chunks', textChunks)
+                    agentSpan.setAttribute('gen_ai.agent.duration_ms', responseTime)
+                    agentSpan.setAttribute('gen_ai.agent.stream_duration_ms', streamTime)
+                    agentSpan.setAttribute('gen_ai.tool_executions', JSON.stringify(toolExecutions))
+                    agentSpan.end()
+                  }
+
+                  Sentry.logger.info('Customer research request completed successfully', {
+                    requestId,
+                    responseTime,
+                    streamTime,
+                    toolsUsed,
+                    textChunks,
+                    totalInputTokens,
+                    totalOutputTokens
+                  })
+
+                  Sentry.metrics.distribution('api.customer_research.response_time', responseTime, {
+                    unit: 'millisecond',
+                    attributes: { status: 'success' }
+                  })
+
+                  Sentry.metrics.distribution('api.customer_research.stream_time', streamTime, {
+                    unit: 'millisecond',
+                    attributes: { status: 'success' }
+                  })
+
+                  Sentry.metrics.distribution('api.customer_research.tools_per_request', toolsUsed, {
+                    unit: 'none',
+                    attributes: { status: 'success' }
+                  })
+
+                  Sentry.metrics.distribution('api.customer_research.input_tokens', totalInputTokens, {
+                    unit: 'none',
+                    attributes: { model: 'claude-sonnet-4-5' }
+                  })
+
+                  Sentry.metrics.distribution('api.customer_research.output_tokens', totalOutputTokens, {
+                    unit: 'none',
+                    attributes: { model: 'claude-sonnet-4-5' }
+                  })
+
+                  Sentry.metrics.count('api.customer_research.success', 1)
+
+                  controller.enqueue(encoder.encode(
+                    `data: ${JSON.stringify({ type: 'done' })}\n\n`
+                  ))
+                }
+
+                // Handle errors
+                if (message.type === 'result' && message.subtype !== 'success') {
+                  Sentry.logger.error('Customer research query did not complete successfully', {
+                    requestId,
+                    subtype: message.subtype
+                  })
+
+                  Sentry.metrics.count('api.customer_research.error', 1, {
+                    attributes: { type: 'query_error', subtype: message.subtype }
+                  })
+
+                  if (agentSpan) {
+                    agentSpan.setStatus({ code: 2, message: 'Query failed' })
+                    agentSpan.end()
+                  }
+
+                  controller.enqueue(encoder.encode(
+                    `data: ${JSON.stringify({ type: 'error', message: 'Query did not complete successfully' })}\n\n`
+                  ))
+                }
               }
-            }
 
-            // Send tool progress updates
-            if (message.type === 'tool_progress') {
-              controller.enqueue(encoder.encode(
-                `data: ${JSON.stringify({ type: 'tool_progress', tool: message.tool_name, elapsed: message.elapsed_time_seconds })}\n\n`
-              ))
-            }
-
-            // Signal completion
-            if (message.type === 'result' && message.subtype === 'success') {
-              const responseTime = Date.now() - requestStartTime
-              const streamTime = Date.now() - streamStartTime
-
-              Sentry.logger.info('Customer research request completed successfully', {
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+              controller.close()
+            } catch (error) {
+              Sentry.logger.error('Stream error in customer research API', {
                 requestId,
-                responseTime,
-                streamTime,
-                toolsUsed,
-                textChunks
-              })
-
-              Sentry.metrics.distribution('api.customer_research.response_time', responseTime, {
-                unit: 'millisecond',
-                attributes: { status: 'success' }
-              })
-
-              Sentry.metrics.distribution('api.customer_research.stream_time', streamTime, {
-                unit: 'millisecond',
-                attributes: { status: 'success' }
-              })
-
-              Sentry.metrics.distribution('api.customer_research.tools_per_request', toolsUsed, {
-                unit: 'none',
-                attributes: { status: 'success' }
-              })
-
-              Sentry.metrics.count('api.customer_research.success', 1)
-
-              controller.enqueue(encoder.encode(
-                `data: ${JSON.stringify({ type: 'done' })}\n\n`
-              ))
-            }
-
-            // Handle errors
-            if (message.type === 'result' && message.subtype !== 'success') {
-              Sentry.logger.error('Customer research query did not complete successfully', {
-                requestId,
-                subtype: message.subtype
+                error: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : undefined
               })
 
               Sentry.metrics.count('api.customer_research.error', 1, {
-                attributes: { type: 'query_error', subtype: message.subtype }
+                attributes: { type: 'stream_error' }
               })
 
+              if (agentSpan) {
+                agentSpan.setStatus({ code: 2, message: 'Stream error' })
+                agentSpan.end()
+              }
+              Sentry.captureException(error)
+
               controller.enqueue(encoder.encode(
-                `data: ${JSON.stringify({ type: 'error', message: 'Query did not complete successfully' })}\n\n`
+                `data: ${JSON.stringify({ type: 'error', message: 'Stream error occurred' })}\n\n`
               ))
+              controller.close()
             }
           }
-
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-          controller.close()
-        } catch (error) {
-          Sentry.logger.error('Stream error in customer research API', {
-            requestId,
-            error: error instanceof Error ? error.message : 'Unknown error',
-            stack: error instanceof Error ? error.stack : undefined
-          })
-
-          Sentry.metrics.count('api.customer_research.error', 1, {
-            attributes: { type: 'stream_error' }
-          })
-
-          Sentry.captureException(error)
-
-          controller.enqueue(encoder.encode(
-            `data: ${JSON.stringify({ type: 'error', message: 'Stream error occurred' })}\n\n`
-          ))
-          controller.close()
-        }
-      }
-    })
+        })
 
     return new Response(stream, {
       headers: {
@@ -327,5 +407,8 @@ export async function POST(request: Request) {
       JSON.stringify({ error: 'Failed to process customer research request. Check server logs for details.' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
+  } finally {
+    // Clear conversation ID
+    Sentry.setConversationId(null)
   }
 }
